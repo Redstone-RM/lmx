@@ -1,0 +1,44 @@
+# ------------------------------------------------------------------------
+# makefile for LMX libtask.a library
+# export PATH=/usr/local/avr-gcc/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+# ------------------------------------------------------------------------
+
+CC = avr-gcc -c  -Os
+CCFLAGS = -I . -I ../ -I /usr/local/avr/include/
+
+LINK = avr-ld
+LINKPATH = -L/usr/local/avr/lib \
+           -L/usr/local/avr-gcc/lib \
+           -L/usr/local/avr-gcc/avr/lib\
+	   -L../
+
+LINKOPTS = ../libtask.a
+
+AR = avr-ar
+
+OBJCOPY = avr-objcopy
+
+# how to make srecords from object files:
+S19 = $(OBJCOPY) -O srec
+
+# ------------------------------------------------------------------------
+
+all:	bmark-2.s19
+
+clean:	
+	rm -f *.o *.elf *.s19 *.map
+
+%.o:%.c
+	$(CC) $(CCFLAGS) $<
+
+# ------------------------------------------------------------------------
+
+bmark-2.elf: bmark-2.o $(LDFILE) 
+	$(LINK) $(LINKPATH) -M -o bmark-2.elf $(LINKOPTS) bmark-2.o > bmark-2.map
+       
+bmark-2.s19: bmark-2.elf 
+	$(S19) bmark-2.elf bmark-2.s19
+	rm bmark-2.o bmark-2.elf 
+
+# ------------------------------------------------------------------------
+# eof

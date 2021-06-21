@@ -1,0 +1,39 @@
+# ------------------------------------------------------------------------
+# makefile for LMX libtask.a library
+# export PATH=/usr/local/avr-gcc/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+#
+# Be sure to edit "task.h" and define MACHINE as MACH_AVR
+#
+# ------------------------------------------------------------------------
+
+CC = avr-gcc -c  -Os
+CCFLAGS = -I . -I /usr/local/avr/include/
+
+LINK = avr-ld
+LINKPATH = -L/usr/local/avr/lib \
+           -L/usr/local/avr-gcc/lib \
+           -L/usr/local/avr-gcc/avr/lib
+LINKOPTS = 
+
+AR = avr-ar
+
+# ------------------------------------------------------------------------
+
+libobjs = sysclock.o task.o log.o
+
+# ------------------------------------------------------------------------
+
+all:	libfiles 
+
+clean:	
+	rm -f $(libobjs)  libtask.a *.o *.elf *.s19 *.map
+
+%.o:%.c
+	$(CC) $(CCFLAGS) $<
+
+libfiles: $(libobjs)
+	$(AR) -r libtask.a $(libobjs) 
+	# rm $(libobjs)
+
+# ------------------------------------------------------------------------
+# eof

@@ -1,0 +1,97 @@
+/* ------------------------------------------------------------------------------------	*/
+/* GNU gcc ARM processor assembly for link/unlink subroutine stack frames.
+
+04 Jul 2015 dpa	Created.  
+05 Aug 2015 dpa Pointer dereference.
+
+/* ------------------------------------------------------------------------------------	*/
+
+Arm has 16 general purpose 32 bit registers.  R15 is the Program Counter.  By gcc convention, R0-R3 are
+used to pass in first four arguments and for scratch, and are unprotected.  Return is in R0.  R4-R14 are
+protected, and must be saved before using. 
+
+ARM uses a Link Register for a subroutine's return address.  (R14 I think:  R15=PC, R14=LINK, R13=SP, R12=FP ?? ) 
+
+The CALLED function has the option of pushing that LR to the stack if it is going to call other subroutines,
+else just leave it in the LR register and "BX" back to the calling function on exit, super fast.  If the LR was
+pushed then a "load multiple registers" instruction pops the saved LR directly into the PC, and also typically 
+restores the frame pointer register, on subroutine exit.
+
+So subroutine entry/exit can take two forms:
+
+1) Entry and Exit for a subroutine that calls NO other subroutines:
+
+        str     fp, [sp, #-4]!		/* LINK: --(*SP) = FP 
+						Store register fp at address pointed by sp-4.  The ! means post update the SP */
+        add     fp, sp, #0		/* 	FP = SP+0,  save SP in FP */
+
+        sub     sp, sp, #12		/* SP = SP-12, room for 3x 32bit 4byte local stack variables, just as example */
+	-----
+
+	mov     r0, r3			/* returned value from a subroutine is in R0, same as 1st argument passed in */
+
+	-----
+        sub     sp, fp, #0		/* UNLINK: SP = FP-0,  recover the SP before stack frame was built. */
+        ldmfd   sp!, {fp}		/*	FP = (*SP)++, pop FP off stack. */
+
+        bx      lr			/* RETURN: PC = LR;
+						BX LR is zippy arm branch instruction, jump to address in the link register.  
+						Essentially PC = LR, but also does a mode test, (Thumb vs. Arm). */
+
+2) Entry and Exit for a subroutine that calls other subroutines:
+
+        stmfd   sp!, {fp, lr}		/* LINK: --(*SP) = FP; --(*SP) = LR;
+						Store multiple registers to address pointed by first register operand, SP.
+						The ! means return the final address to the SP register.
+						{fp, lr} means to push the Frame Pointer and Link Register. */
+        add     fp, sp, #4		/*	FP = SP+4,  save sp+4 in FP.  Note that this does not change the SP value.
+
+        sub     sp, sp, #8		sp = sp-8  (setup stack for local variables).  This does change the SP.
+	-----
+
+        mov     r0, r3			/* returned value in R0
+
+	-----
+        sub     sp, fp, #4		/* UNLINK:  SP = FP-4, restore SP before stack frame was built.
+
+        ldmfd   sp!, {fp, pc}		/* RETURN: FP = (*SP)++; PC = (*SP)++; 
+						pop saved FP to FP, and saved LR to PC.  
+						This is effectively the "unlink" and "return" instructions
+						combined, and replaces the pop FP and BX LR instructions.
+
+
+Since defer() calls one subroutine, do_block(), it will enter with "stmfd sp!, {fp, lr)" and exit with "ldmfd sp!, {fp, pc}."
+For a new task, because we get to set up the stack, we can load the link register directly and do a speedy "bx lr" to our function entry.
+
+/* ------------------------------------------------------------------------------------	*/
+
+#define STORE_FP	asm("ldr r0,=current; 		// load R0 register with address of "current" 
+			ldr r0, [r0, #0];		// load R0 register with contents of "current", pointer to a TASK struct.
+			str fp,[r0,#FP]") 		// store FP register to FP element of current task struct
+
+#define LOAD_FP		asm("ldr r0,=current; 		// load R0 register with address of "current" 
+			ldr r0, [r0, #0];		// load R0 register with contents of "current", pointer to a TASK struct.
+			ldr fp,[r0,#FP]") 		// load FP register from FP element of current task struct
+
+#define UNLINK		asm("add sp, fp, #4; 		// recover sp from fp+4.  (create_task() left FP pointing at next empty.)
+			ldmfd sp!, {fp}")		// recover fp from stack, sp! means post increment stack pointer
+
+#define LOAD_TASK	asm("ldmfd sp!, {r0}; 		// pop task arg off stack into R0, post increment stack pointer.
+			ldr lr,=current; 		// load LR with address of current
+			ldr lr, [lr, #0];		// load LR with contents of current, pointer to a TASK struct
+			ldr lr, [lr, #FUNC]") 		// load LR with FUNC element of current task struct, pointer to function entry.
+
+#define RETURN		asm("bx lr")			// PC = LR, "return" to task function entry
+
+#define SETSTATE	current->state = RUNNING	// Set state of new task to running
+
+#define NEW_TASK	SETSTATE; LOAD_FP; UNLINK; LOAD_TASK; RETURN;	// setup stack and registers for a new task and execute.
+
+/* ------------------------------------------------------------------------------------	*/
+
+These ARM macros have been tested on BeagleBoneBlack using the demo-arm.c file modified
+to test the 'defer()' call without sysclock support.  It includes sysclock.c, task.c,
+and log.c.
+
+/* ------------------------------------------------------------------------------------	*/
+/* EOF */

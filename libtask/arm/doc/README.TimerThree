@@ -1,0 +1,9 @@
+The files for 10 KHz sampleclock and 1 KHz sysclock on the Teensy 3.1 ARM
+compatible with the Arduino IDE with teensyduino pulgin:
+
+TimerThree.cpp
+TimerThree.h
+known_16bit_timers.h
+
+
+

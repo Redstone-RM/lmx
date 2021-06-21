@@ -1,0 +1,207 @@
+/*
+ * Linker script for typical ROM-based M68K embedded applications using COFF obj format.
+ * Copyright © 1997-1999 by Object Software Inc., All Rights Reserved.
+ *
+ * The copyright holder hereby grants permission to use, copy, modify, distribute,
+ * and license this software and its documentation for any purpose, provided
+ * that existing copyright notices are retained in all copies and that this
+ * notice is included verbatim in any distributions. No written agreement,
+ * license, or royalty fee is required for any of the authorized uses.
+ *
+ * This script needs four symbols defined to set the location of RAM and ROM memory:
+ *	__rom_start		The first address of read-only memory.
+ *				All read-only sections are placed here, as well as
+ *				a copy of the initialized data to be copied to RAM
+ *				by the startup code.
+ *	__rom_size		the size of the read-only memory block.
+ *	__ram_start		The first address of read/write memory;
+ *				all initialized and uninitialized data goes here.
+ *	__ram_size		The size of the read/write memory block;
+ *				the stack pointer is set to the top of this block.
+ *
+ * In addition, the symbol __vector_default must be defined; this is the address of
+ * the default interrupt/exception handler. Any interrupt vectors which do not have
+ * a specific handler will be set to point to this location.
+ *
+ * These symbols may be defined on the linker command line or in an object file.
+ *
+ * Stack grows down from high memory.
+ *
+ * The memory map look like this:
+ *
+ *          ROM
+ * +--------------------+ <- __rom_start
+ * | .vectors           |
+ * | .text              |
+ * |        _etext      |
+ * |        ctor list   | the ctor and dtor lists are for
+ * |        dtor list   | C++ support
+ * +--------------------+ <- __rom_data_start
+ * | ROM image of .data |
+ * +--------------------+
+ *
+ *          RAM
+ * +--------------------+ <- __ram_start
+ * | .data              | initialized data ends up here
+ * |        _edata      |
+ * +--------------------+
+ * | .bss               |
+ * |        __bss_start | start of bss, cleared by crt0
+ * |        _end        | start of heap, used by sbrk()
+ * +--------------------+
+ * .                    .
+ * .                    .
+ * .                    .
+ * |        __stack     | top of stack (at __ram_start + __ram_size)
+ * +--------------------+
+ */
+STARTUP(mrm_crt0.o)
+OUTPUT_ARCH(m68k)
+SEARCH_DIR(./mrm332)
+SEARCH_DIR(./)
+/*
+INPUT(vectors.o)
+*/
+/*
+GROUP(-lbcc -lc -lgcc)
+GROUP(-lmrm -lmrm_x -lc -lgcc -lm)
+GROUP(-lmrm -lmrm_x -lc -lgcc)
+GROUP(-lmrm -lc -lgcc)
+*/
+GROUP(-ltask -lmrm -lc -lgcc -lm)
+
+__DYNAMIC  =  0;
+
+
+__ram_start  = 0x03000;
+__ram_size   = 0x70000;
+__rom_start  = 0x90000; 
+__rom_size   = 0x70000; 
+
+__stack      = __ram_start + __ram_size - 0x4;
+__prog_start = __rom_start + 0x10;
+
+/*
+ * allocate the stack to be at the top of memory, since the stack
+ * grows down. __boot_stack is the stack pointer value that is stored
+ * in the exception vector table.
+ */
+
+PROVIDE (__stack = __ram_start + __ram_size - 0x4);
+PROVIDE (__boot_stack = __ram_start + __ram_size - 0x4);
+
+/*
+ * Initalize some symbols to be zero so we can reference them in the
+ * crt0 without core dumping. These functions are all optional, but
+ * we do this so we can have our crt0 always use them if they exist.
+ * This is so BSPs work better when using the crt0 installed with gcc.
+ * We have to initalize them twice, so we cover a.out (which prepends
+ * an underscore) and coff object file formats.
+ */
+PROVIDE (crt0_flags = 0);
+PROVIDE (_crt0_flags = 0);
+PROVIDE (hardware_init_hook = 0);
+PROVIDE (_hardware_init_hook = 0);
+PROVIDE (software_init_hook = 0);
+PROVIDE (_software_init_hook = 0);
+
+/* Provide default values for the interrupt/exception vectors.
+ * We have a unique name (in vectors.o) for each interrupt/exception vector.
+ * Any that are not explicitly defined in user code will be assigned a default value
+ * by this series of PROVIDE directives.
+ */
+
+
+/* .vectors, .text, and a copy of .data go into ROM; .data and .bss go into RAM. */
+SECTIONS
+{
+/*
+  .vectors __rom_start :
+  {
+    __vector_start = .;
+    *(.vectors)
+  }
+  */
+
+/*
+  .text BLOCK (0x4) :
+  */
+  .text __rom_start :
+  {
+    LONG (0xbeefbeef);
+    LONG (__stack);
+    LONG (__prog_start);
+    LONG (0x0);
+    *(.text)
+    . = ALIGN(0x4);
+     __CTOR_LIST__ = .;
+    LONG((__CTOR_END__ - __CTOR_LIST__) / 4 - 2)
+    *(.ctors)
+    LONG(0)
+    __CTOR_END__ = .;
+    __DTOR_LIST__ = .;
+    LONG((__DTOR_END__ - __DTOR_LIST__) / 4 - 2)
+    *(.dtors)
+     LONG(0)
+    __DTOR_END__ = .;
+    . = ALIGN(0x4);
+    *(.rodata)
+    *(.gcc_exc)
+    *(.gcc_except_table)
+    . = ALIGN(0x4);	/* added at MarkC suggestion, 03 Aug 01 dpa */
+    __INIT_SECTION__ = . ;
+    LONG (0x4e560000)	/* linkw %fp,#0 */
+    *(.init)
+    SHORT (0x4e5e)	/* unlk %fp */
+    SHORT (0x4e75)	/* rts */
+
+    __FINI_SECTION__ = . ;
+    LONG (0x4e560000)	/* linkw %fp,#0 */
+    *(.fini)
+    SHORT (0x4e5e)	/* unlk %fp */
+    SHORT (0x4e75)	/* rts */
+
+/* hardware initialization lists go here */
+    . = ALIGN (0x4);
+    crt0_initialization_list = .;
+    _crt0_initialization_list = .;
+    *(.crt0ini)
+    . = ALIGN (0x2);
+    LONG (0)		/* null pointer terminates list */
+    _etext = .;
+    *(.lit)
+    . = ALIGN (0x4);
+    __data_start_rom = .;
+  }
+
+  .data __ram_start : AT (__data_start_rom)
+  {
+    __data_start = .;
+    *(.shdata)
+    *(.data)
+    _edata = .;
+  }
+
+  .bss BLOCK (0x4) :
+  {
+    __bss_start = . ;
+    *(.shbss)
+    *(.bss)
+    *(COMMON)
+    *(.eh_fram)
+    *(.eh_frame)
+    _end =  ALIGN (0x8);
+    __end = _end;
+  }
+
+  .stab 0 (NOLOAD) :
+  {
+    *(.stab)
+  }
+
+  .stabstr 0 (NOLOAD) :
+  {
+    *(.stabstr)
+  }
+}
+

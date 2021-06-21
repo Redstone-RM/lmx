@@ -1,0 +1,51 @@
+/* ---------------------------------------------------------------------------- */
+/* README */
+
+A Light-weight Multi-tasking Executive (LMX) is implemented by the system calls
+defined in the files "task.c" and "task.h".  A companion 1kHz 32 bit system
+clock is also provided in the files "sysclock.c" and sysclock.h".
+
+The definitions and files in this directory are intended to aid in the porting of
+the executive to different processor hardware architectures. The files are:
+
+task.c		The executive itself.
+task.h		Definitions for task.c
+
+sysclock.c	A companion 1kHz 32bit system clock for millisecond timing and delays.
+sysclock.h	Definitions for sysclock.c
+
+log.c		Vectors for system and error logging.
+log.h		Macros for system and error logging.
+
+68332		Subdirectory with Machine-dependent macros for Motorola 68332 processor
+arm		Subdirectory with Machine-dependent macros for ARM processor
+avr		Subdirectory with Machine-dependent macros for AVR processor
+
+demo		Subdirectory with demo code.
+doc		Subdirectory with some system documentation.
+
+makefile.M68K	makefile for M68332 processor
+makefile.ARM	makefile for ARM processor
+makefile.AVR	makefile for AVR processor.
+
+The system user documentation is in "doc/README-LMX.txt".  
+
+System porting information is in "doc/README-machine.txt" which explains the multi-tasking
+method and the machine-dependent parts of the executive.
+
+The task and sysclock code in this directory is normally compiled into object
+code and the library "libtask.a" is built.  Access to the code in that library
+is available through including the header files task.h, sysclock.h and log.h
+in the application program, and linking to the libtask.a library at compile time.
+
+To compile for M68K, ARM, or AVR on a linux system:
+
+	1.	Edit the MACHINE definition in "task.h" to select the appropriate architecture.
+	2.	Copy makefile.M68K, makefile.AVR, or makefile.ARM to makefile.
+	3.	type "make"
+
+Note that the makefile compiles with the gcc -Os optimizer flags.  Other combinations not tested.
+
+28 Aug 2015
+dpa
+

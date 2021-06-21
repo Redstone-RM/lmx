@@ -1,0 +1,26 @@
+Register 	Alt. Name 	Usage
+
+r0 	a1 	First function argument
+		Integer function result
+		Scratch register
+r1 	a2 	Second function argument
+		Scratch register
+r2 	a3 	Third function argument
+		Scratch register
+r3 	a4 	Fourth function argument
+		Scratch register
+r4 	v1 	Register variable
+r5 	v2 	Register variable
+r6 	v3 	Register variable
+r7 	v4 	Register variable
+r8 	v5 	Register variable
+r9 	v6
+	rfp 	Register variable
+		Real frame pointer
+r10 	sl 	Stack limit
+r11 	fp 	Argument pointer
+r12 	ip 	Temporary workspace
+r13 	sp 	Stack pointer
+r14 	lr 	Link register
+		Workspace
+r15 	pc 	Program counter

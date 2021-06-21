@@ -1,0 +1,46 @@
+# ------------------------------------------------------------------------
+# makefile for LMX libtask.a library
+# 22 Jul 2015	dpa
+#
+# Path to the GNU M68K cross compiler
+# export PATH=/usr/local/arm-gcc/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+#
+# Be sure to edit "task.h" and define MACHINE as MACH_ARM
+#
+# ------------------------------------------------------------------------
+
+CC = arm-eabi-gcc
+CCFLAGS = -c -Os -I . -I /usr/local/arm-gcc/arm-eabi/include 
+
+LINK = arm-eabi-ld
+LINKPATH = -L/usr/local/arm-gcc/arm-eabi/lib \
+           -L/usr/local/arm-gcc/lib/gcc/arm-none-eabi/5.1.0 
+	   
+LINKOPTS = 
+
+AR = arm-eabi-ar
+
+# ------------------------------------------------------------------------
+
+// LDFILE = mrm332/mrm.ld
+
+# ------------------------------------------------------------------------
+
+libobjs = sysclock.o task.o log.o
+
+# ------------------------------------------------------------------------
+
+all:	libfiles 
+
+clean:	
+	rm -f $(libobjs)  libtask.a *.o *.elf *.s19 *.map
+
+%.o:%.c	
+	$(CC) $(CCFLAGS) $<
+
+libfiles: $(libobjs)
+	$(AR) -r libtask.a $(libobjs) 
+	# rm $(libobjs)
+
+# ------------------------------------------------------------------------
+# eof

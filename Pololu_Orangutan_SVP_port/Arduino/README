@@ -1,0 +1,15 @@
+/* ---------------------------------------------------------------------------- */
+/* README */
+
+To install this for Arduino, just copy the two folders 'bmark-2' and 'libraries' into your Arduino sketchbook folder:
+
+What is the Sketchbook folder and where can you find it?
+Your sketchbook folder is the default location where the Arduino IDE stores your sketches. This folder is automatically created by the IDE when you install it. If you did an xcopy installation you can open the Arduino IDE and set/see the location by opening File-->Preferences from the main menu.
+
+On Linux machines, the folder is named "Sketchbook" and it is typically located in /home/<username>
+
+On Windows and Macintosh machines, the default name of the folder is "Arduino" and is located in your My Documents folder. 
+
+/* ---------------------------------------------------------------------------- */
+/* EOF */
+
