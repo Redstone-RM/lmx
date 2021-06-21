@@ -1,0 +1,78 @@
+LMX questions
+Inbox
+
+Doug Paradis <paradug@gmail.com>
+Sat, May 27, 2017, 9:25 AM
+to David
+
+David,
+     I have some questions concerning the use of LMX. I hope you have some time to help. BTW, the documentation that you handed out has been very helpful. 
+
+Q1:  From the documentation, I see that void kill_process(int pid) can be used to kill a task. You have to have a priori knowledge of the pid. Is there a function to determine the pid from the name string of the task?  
+
+Q2:  If I kill a task than later restart it, how is the pid determined by the create_task function? Does it add the task to the bottom of the task list, or does it use the previous pid and reinsert the task into its original position?
+
+Q3:  How can I create a task inside of another task, and specifically place the new task into particular location in the task list? 
+
+Q4:  If I create a new task, that has not been used before, can it be inserted into the middle of the task list (i.e., make a space in the task list)?   
+
+    
+    I hope these questions are not a burden. 
+
+Regards,
+Doug P.
+
+David Anderson <davida@smu.edu>
+Sat, May 27, 2017, 3:52 PM
+to me
+
+Hey Doug,
+
+No burden at all.  I'm flattered you want to use it.
+
+Maybe a brief description will answer all 4 of your questions.  
+
+The task list is a circular linked list, so the "last" link in the chain points back to the "first" link.  I put those in quotes because effectively there is no "first" and "last", just an endless loop.  
+
+When you call create_task(), either from main() or from another task(), like this:
+
+int saved_pid = create_task("DUMBO",dumbo_task,0,128)
+
+It calls ptr = malloc() and dynamically allocates enough space for a task struct + 128 bytes for the stack.   That allocation will be different sizes depending on stack size, and the memory manager then puts it where ever it wants, and returns a pointer. ( Similarly, when a process is killed, it's allocated memory is freed with free(ptr). )  The pointer returned by that malloc() call is thereafter referred to as the task pointer.   The linked list is implemented with a forward pointer to the next task in the list, as the first element of each struct.  There is no separate task list, per se.    These pointers are therefore not necessarily in numerical order.
+
+Next, create_task() sets the initial values in the newly created task structure, including the process ID.   This is created from an incrementing global pointer with values of 1 through 32767, which wraps around to 1.   It is tested to see if that PID is already in use until it finds a free one, which it then plugs into the task struct (and also returns at the end of create_task).  Again, these are not necessarily in numerical order.
+
+Finally create_task() adds the new task struct to the linked list by copying the forward task pointer from the task that is calling it, and replacing that task's forward pointer with the newly created task pointer.   So the new task is always inserted into the linked list immediately following the task that created it.  
+
+You can nest that as deep as you want (tasks creating tasks creating tasks etc).   Any task can create another task.
+
+So the numerical order of the PIDs, as well as the numerical order of the TASK ids, are not directly related to their execution order in the circular linked list, depending on how they are created and killed, and by whom.
+
+If the task created by a task created by a task (etc) is to run forever, then you can ignore the PID returned by create_task().   If you want later to kill that task, then you do need it's PID to be saved in a variable somewhere when it is created.
+
+The name string is mainly there for debug purposes and is not really used by the rtos.
+
+But, if you want to work with the values in the task struct (like, say, the pid or name string) then you need the pointer to the task's struct.  This can be derived from the PID, if you know it, with the call findpid(pid), like this
+
+TASK *t = findpid(5);
+if (t != -1) printf("%s\t%d\n",t->name,t->pid) else printf("No PID 5 in the queue\n");
+
+If you need to search through the whole linked list and don't know the pids, then it's easier to use iterate_task(func,arg) which steps through the whole list one task at a time, calling a user supplied function and handing it the task ID for each task. 
+
+For example, to print the PID and name of a task in the linked list from a known task id:
+
+void print_name(TASK* t, int ignored) {
+                        printf("%d %s\t",t->pid,t->name);
+                }
+
+and then to print all the names and pids in the linked list, without a priori knowledge of task ids or PIDs:
+
+                iterate_tasks(print_name, 0);
+                printf("\n");
+
+So I guess one could do the same thing with a name string as input, using strcmp() or some such to find the right name and return it's PID.  It doesn't do this currently.
+
+To summarize, any task can create another task, nested as deeply as you want.  New tasks are always inserted into the linked list just after the current task that is calling the create_task() function. 
+
+Hope this helps,
+David
