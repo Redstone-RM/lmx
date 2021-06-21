@@ -1,0 +1,58 @@
+LMX task creation
+Inbox
+
+Doug Paradis <paradug@gmail.com>
+Wed, Oct 19, 2016, 1:02 PM
+to David
+
+David, 
+     Can LMX create a new task from an existing task? If so, would you send me some example code. From the LMX documentation, I am not sure of how to handle the a_pid.
+
+Thanks,
+Doug P.
+
+David Anderson <davida@smu.edu>
+Attachments
+Wed, Oct 19, 2016, 1:09 PM
+to me
+
+Yes. 
+
+See attached bmark-2.ino file and check out the task "manage_led1()" excerpted here.
+
+David
+
+
+void manage_led1(ASIZE delay)
+{
+  TSIZE cnt;        /* count defer() cycles in absense of sysclock, else unused */
+  int pid1;
+
+  WAIT(delay);
+  while (1) {
+    pid1 = create_task("LED1",led1,231,MINSTACK);
+    if (pid1 != -1) {
+      SPRINTF(sbuf,"\n# Starting LED1 pid %d",pid1);
+      PRINTF(sbuf);
+      WAIT(delay);
+      kill_process(pid1);
+      SPRINTF(sbuf,"\n# Killing LED1 pid %d\n",pid1);
+      PRINTF(sbuf);
+      LED1_OFF;
+      WAIT(delay);
+    } else {
+      PRINTF("# ERROR!  create_task() returned -1\n");
+      WAIT(1000);
+
+Attachments area
+
+David Anderson <davida@smu.edu>
+Wed, Oct 19, 2016, 11:04 PM
+to me
+
+Doug,
+
+To further answer your question, you can just ignore the returned pid from the create task call if you don't need it.  Reasons you might want to stick it in an int and save it is if you want to kill the process at some later time, or want to find out how much stack the created process has used, etc.  
+
+Hope that helps,
+David
