@@ -1,0 +1,469 @@
+-----------------------------------------------------------------------------
+				LMX
+-----------------------------------------------------------------------------
+
+		A Light-Weight Multi-Tasking Executive
+		For Embedded Controllers and Robotics.
+
+		By David P. Anderson (davida@smu.edu)
+
+-----------------------------------------------------------------------------
+
+I. Motivation
+
+-----------------------------------------------------------------------------
+
+The C code in the accompanying "task.c" and "task.h" files implements a
+light-weight cooperative round-robin multi-tasking executive.  It allows
+multiple cooperative tasks to run in parallel in real-time.  
+
+The companion "sysclock.c" and "sysclock.h" files implement a 1 KHz system
+clock that can be used by the executive to produce millisecond timed delays
+and periodic execution.
+
+This code in one form or another has been the basis for almost for all of the robot
+software that I have written.  The original implementation in the early 90's was in 
+the language FORTH, later ported to C for the HC11  Award Winning SR04 Robot, and then 
+a 32 bit MC68332 version for the Six-Wheel jBot outdoor robot, the LEAF_Blower robot
+and the ever popular nBot Two-Wheel Balancing robot.  More recently it's been ported
+to the AVR (Arduino) and an ARM port is underway.
+
+Those familiar with my robots know that they are also coded in an architectural paradigm 
+called "Subsumption."  This multi-tasking code runs below that level of organization, and
+so subsumption is not covered in this text. 
+
+This little scheduler is only about 300 lines of code.  It is not an Operating System or
+an RTOS.  It is rather a simple way for multiple separate tasks to operate simultaneously
+to solve a problem.  Its implementation makes possible the sharing of all the other robot
+code and libraries that have been developed for my robots over the last couple of decades,
+and hopefully that of others as well.
+
+
+-----------------------------------------------------------------------------
+
+II. 	Structure
+
+-----------------------------------------------------------------------------
+
+LMX Cooperative Tasks are normal C subroutines that expect a single ASIZE argument,
+which is machine dependent but normally a 32 bit signed int,  and return void.
+
+	void a_cooperative_task(ASIZE argument);
+
+They are arranged in a circular linked list of "TASK" data structures, defined in 'task.h', by the "create_task()" system call.
+
+Each task does whatever execution it requires and then defers to the next running task in the linked list by calling the subroutine "defer()".   In this sense the executive is cooperative rather than pre-emptive.  Each task has complete control of the processor until it releases control by calling defer().  
+
+Interrupts are not affected, other than being briefly disabled on the 8-bit AVR processors
+during a context switch.
+
+	Cooperative tasks take one of two forms:
+
+	A.  Tasks That Never Exit:
+
+	Most tasks loop endlessly around some form of the subroutine "defer()".  
+
+	void a_sample_task(ASIZE argument)
+	{
+	       ...do any initialization here...
+
+		while (1) {		/* loop forever */
+
+			...do periodic robot and sensor stuff here...
+
+			defer();	/* defer to next running task */
+		}
+	}
+
+
+	B.  Tasks Which Exit:
+
+	do so by calling the subroutine "terminate()".
+
+	void another_sample_task(ASIZE argument)
+	{
+		...do whatever needs to be done ... 
+
+		terminate();
+	}
+
+	The subroutine terminate() removes the calling task from the round-robin linked
+	list, frees its memory, and defer()s to the next running task in the list.
+
+
+-----------------------------------------------------------------------------
+
+III.    Defer()'ing
+
+-----------------------------------------------------------------------------
+
+The cooperative tasks can invoke defer() directly, as in "a_sample_task()" above.
+More commonly defer() is called to suspend a task while it waits for an event, either
+a timer tick or a semaphore.  Here are the routines which invoke defer():
+
+
+	A.	void wake_after(ASIZE milliseconds);
+
+	The wake_after() call suspends the calling task for the requested number of
+	milliseconds.   It stores a wakeup time in the queue, sets the task state
+	to "WAITING", and calls defer().  Its state is reset to "RUNNING" when
+	its wakeup time expires.
+
+	void blink_led(ASIZE ignored)
+	{
+		while (1) {
+			led_on();
+			wake_after(500);
+			led_off();
+			wake_after(500);
+		}
+	}
+
+	This task will blink an led on and off once per second.
+
+
+	B.	int semaphore_obtain(int *s);
+
+	LMX implements simple binary semaphores as ordinary integers that
+	can have the values of 1 or 0.  The semaphore_obtain() call sets
+	the semaphore pointed by "s" to 1 and suspends the calling task
+	until the indicated semaphore is cleared.
+	It always returns 0.
+
+	int sample_semaphore = 0;
+
+	void a_semaphore_task(ASIZE delay)
+	{
+		while (1) {
+			semaphore_obtain(&sample_semaphore);
+			led_on();
+			wake_after(delay);
+			led_off();
+		}
+	}
+
+	This task will suspend itself until someone clears the "sample_semaphore", then
+	flash the led on and off at a rate determined by the "delay" argument, and loop
+	around to suspend again on the semaphore.
+
+
+	C.	void semaphore_release(int *s);
+
+	The semaphore_release() subroutine calls defer() and sets the semaphore pointed
+	by "s" to zero.
+
+	void flash_the_led(ASIZE delay)
+	{
+		while (1) {
+			wake_after(delay);
+			semaphore_release(&sample_semaphore);
+		}
+	}
+
+	This task will flash the led of the previous task once every "delay" milliseconds.
+
+
+	D.	int semaphore_obtain_timeout(int *s, ASIZE milliseconds);
+
+	The semaphore_obtain_timeout() call is similar to semaphore_obtain() but also
+	adds a timeout value in milliseconds.  It returns 0 if the semaphore is released,
+	and returns 1 if the "milliseconds" timeout has expired. 
+
+		int result;
+		result = semaphore_obtain_timeout(&sample_semaphore, 3000);
+		if (result) ... the semaphore timed out after 3 seconds ...
+
+
+	E.	void msleep(ASIZE milliseconds);
+
+	The msleep() call is similar to the wake_after() call but does not suspend the
+	calling task.  It remains running and tests the elapsed timeout itself in between
+	calls to defer().  This is not as efficient as the wake_after() call but might be
+	useful in some cases.
+
+
+	F.	PERIOD(TSIZE *t, ASIZE d);
+
+	PERIOD() is a macro defined in "log.h" that provides for periodic execution by
+	taking into account the execution and delay times of the calling task.  
+
+	It expects a pointer to a TSIZE timer and an ASIZE delay time in milliseconds.  
+	It calculates the correct suspend time and calls wake_after(), and optionally
+	logs an error if a period is missed.
+
+	void a_period_task(ASIZE delay)
+	{
+		TSIZE t;
+		t = sysclock + delay;
+		while (1) {
+			PERIOD(&t,delay);
+			do_something();
+		}
+	}
+
+
+-----------------------------------------------------------------------------
+
+IV.	Creating, Starting, and Deleting Tasks.
+
+-----------------------------------------------------------------------------
+
+	A.	int create_task(char *name, (*func)(ASIZE arg), ASIZE arg, int stacksize);
+
+	Cooperative tasks are added to the linked list by the "create_task() subroutine 	call. It expects an ASCII label, function pointer, initial argument, and requested 	stack size. It returns the Process ID (pid) of the created task, else -1 on creation 	error.
+
+	int a_pid;
+	a_pid = create_task("ASAMPLE",a_sample_task,0,MINSTACK);
+	if (a_pid == -1) ... error creating the task...
+
+	The stack size is machine and application and task dependent.  Tasks must provide 	enough stack space for their own use and any interrupts that happen while they are 	running. Additionally, tasks that use printf and sprintf functions require more 	stack space as these functions build their strings on the stack.  
+
+	A general rule is to start with ample stack space and then use the LMX diagnostic 	tools to determine actual stack usage.  Then the stack space can be reduced to save 	RAM space if needed.
+
+	B.	void kill_process(int pid);
+
+	Kill a task by its Process ID.  The task is removed from the linked list and its 	memory is freed.   If the deleted task is the calling task, it defers() to the next 	task in the linked list.
+
+
+	C.	void terminate(void);
+
+	Kill the task of the calling process.  Kill self.
+
+
+	D.	void scheduler(void);
+
+	This is started last in main(), and does not exit.  It creates a null task and 	executes it, which in turn starts up the multi-tasking executive.  
+
+	Note that tasks are free to create and kill other tasks at run time.
+
+	
+-----------------------------------------------------------------------------
+
+V.	TASK Utilities.
+
+-----------------------------------------------------------------------------
+
+	Several utilities for manipulation and diagnostics are available:
+
+
+	A.	TASK *current;
+
+	The global variable "current" points to the currently executing task. 
+	Tasks can use it to access their TASK structure.  For example:
+	
+		current->pid	is the Process ID of the currently executing task.
+		current->next	is a pointer to the next TASK in the linked list.
+
+
+	B.	TASK *findpid(int pid);
+
+	Returns a task pointer to the task with the requested pid, else
+	returns -1 if pid is not in the linked list.
+
+
+	C.	int stack_usage(int pid);
+
+	Returns the amount of stack used for a particular task Process ID,
+	or -1 if the requested pid is not in the linked list.
+
+
+	D.	void iterate_tasks((*func)(TASK *t, int arg), int arg);
+
+	Expects a pointer to a function of the form:
+
+		void function(TASK *t, int arg);
+
+	and calls that function once for each task in the linked list, with
+	a pointer to each task in turn and "arg" as the arguments to the function.
+
+	For example, to print the PID and name of a task in the linked list:
+
+		void print_name(TASK* t, int ignored) {
+			printf("%d %s\t",t->pid,t->name);
+		}
+
+	and then to print all the names and pids in the linked list:
+
+		iterate_tasks(print_name, 0);
+		printf("\n");
+
+
+	E.	void print_llist(void);
+
+	Print the linked list.  Prints a snapshot of the TASK structures and
+	timing parameters for each task.  This subroutine requires that the
+	system "printv" vector be initialized to point to a function that can
+	print a string.  For example:
+	
+	define the function:
+
+		void printsbuf(char *s) { printf("%s\n",s); }
+
+	and then somewhere in main(), before print_llist() is called, set the vector:
+
+		printv = printsbuf;
+
+	Be sure to provide enough stack space for any tasks calling "print_llist()"
+	to handle the sprintf() calls which it includes.
+
+
+-----------------------------------------------------------------------------
+
+VI. 	A Simple Demo
+
+-----------------------------------------------------------------------------
+
+	/* -------------------------------------------------------------------- */
+	/* simple_demo.c	Demonstration of LMX Executive			*/
+	/* 									*/
+	/* 13 Sep 2015 dpa	Created.  Demo code.				*/
+	/*			This code for documentation only, not tested. 	*/
+	/* -------------------------------------------------------------------- */
+
+	#include <stdio.h>
+	#include "task.h"
+	#include "log.h"
+	#include "sysclock.h"
+
+	/* -------------------------------------------------------------------- */
+	/* Define some example realtime tasks */
+	/* -------------------------------------------------------------------- */
+
+	/* define a task to measure the defer loop idle rate in Hz. */
+
+	TSIZE idle_cnt;				/* Idle rate in Hz */
+
+	void cpu_idle_task(ASIZE ignored)
+	{
+		TSIZE t;			/* define a timer for PERIOD */
+		t = sysclock + 1000;		/* initialize the timer */
+		while (1) {			/* loop endlessly */
+			idle_cnt = proc_counter; /* proc_counter is incremented by null_task */
+			proc_counter = 0;	/* read and reset proc_counter to 0 */
+			PERIOD(&t,1000);	/* every 1000 milliseconds */
+		}
+	}
+
+	/* -------------------------------------------------------------------- */
+	/* define a task to toggle an led on and off at a fixed rate. */
+
+	void led1_task(ASIZE delay)
+	{
+		while (1) {
+			led1_on();
+			wake_after(delay);
+			led1_off();
+			wake_after(delay)
+		}
+	}
+
+	/* -------------------------------------------------------------------- */
+	/* define a task to flash an led 7 times and suspend on a semaphore */
+
+	int flash_semaphore;
+
+	void led2_task(ASIZE delay)
+	{
+		int i;
+		while(1) {
+			for (i = 0; i < 7; i++) {
+				led2_on();
+				wake_after(delay);
+				led2_off();
+				wake_after(delay);
+			}
+			semaphore_obtain(&flash_semaphore);
+		}
+	}
+
+	/* -------------------------------------------------------------------- */
+	/* define a task to periodically release the semaphore of the led2_task */
+
+	void flash_led2_task(ASIZE delay)
+	{
+		while (1) {
+			wake_after(delay);
+			semaphore_release(&flash_semaphore);
+		}
+	}
+
+	/* -------------------------------------------------------------------- */
+	/* define a task to periodically print out it's name and process ID */
+
+	void print_me_task(ASIZE delay)
+	{
+		while (1) {
+			wake_after(delay);
+			printf("Task %d %s\n",current->pid,current->name);
+		}
+	}
+
+	/* -------------------------------------------------------------------- */
+	/* define a task to periodically print out some performance stats and   */
+	/* the linked list. */
+
+	void print_stats(void) {
+		printf("Sysclock %ld\tSampleclock %ld\tIdleHz %ld\n",
+			sysclock,sampleclock,idle_cnt);
+		print_llist();
+	}
+
+	void stats_task(ASIZE delay)
+	{
+		while (1) {
+			wake_after(delay);
+			print_stats();
+		}
+	}
+
+	/* -------------------------------------------------------------------- */
+	/* define a function for the kernel print vector used by print_llist(). */
+
+	void printsbuf(char *s) { printf("%s\n",s); }
+
+	/* -------------------------------------------------------------------- */
+	/* Initialize and start multi-tasking. */
+
+	int main(void)
+	{
+		your_hardware_init_goes_here();	/* CPU and board specific inits */
+	
+		printv = printsbuf;		/* set the kernel print vector */	
+		sysclock_init();		/* Initialize the sysclock */
+
+		create_task("IDLE",cpu_idle_task,0,MINSTACK);
+		create_task("LED1",led1_task,500,MINSTACK);
+		create_task("LED2",led2_task,50,MINSTACK);
+		create_task("FLASH",flash_led2_task,3333,MINSTACK);
+		create_task("ME-1",print_me_task,8000,MINSTACK*2);
+		create_task("ME-2",print_me_task,6666,MINSTACK*2);
+		create_task("STATS",stats_task,10000,MINSTACK*2);
+
+		scheduler();
+		printf("Should never get here.\n");
+
+		return -1;
+	}
+
+	/* -------------------------------------------------------------------- */
+	/* EOF */
+	
+
+This simple demo should toggle led1 on/off at 1Hz, flash led2 seven times every
+3.333 seconds, and print out the sysclock and system idle time, along with a
+snapshot of the linked list task structures and timing components, every 10 seconds.
+
+LMX allows multiple copies of the same task to be run with different arguments.
+Each will have its own task frame and context.  In the simple_demo.c code, two
+copies of the "print_me_task()" are created, one that runs every 8.000 s and
+one that runs every 6.666 s.  Each will print its own name and process ID
+each time it executes.
+
+-----------------------------------------------------------------------------
+
+13 Sep 2015
+dpa
+
+-----------------------------------------------------------------------------
+
+
